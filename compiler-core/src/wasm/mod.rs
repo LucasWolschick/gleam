@@ -680,16 +680,13 @@ fn emit_sum_equality(sum: &table::Sum, table: &SymbolTable) -> WasmFunction {
             instructions.push(Inst::End);
         }
 
-        // unreachable
-        instructions.push(Inst::Unreachable);
+        // return true if we got here
+        instructions.push(Inst::I32Const(1));
+        instructions.push(Inst::Return);
 
         // end block
         instructions.push(Inst::End);
     }
-
-    // return true if we got here
-    instructions.push(Inst::I32Const(1));
-    instructions.push(Inst::Return);
 
     // end outer block
     instructions.push(Inst::End);
