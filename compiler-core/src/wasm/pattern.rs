@@ -13,6 +13,7 @@ use super::{
     encoder::WasmTypeImpl,
     environment::{Binding, Environment},
     integer, parse_float,
+    string::unescape,
     table::{Local, LocalId, LocalStore, Strings, SumId, SymbolTable, TypeId},
 };
 
@@ -334,7 +335,7 @@ pub fn compile_pattern(
         Pattern::String { value, .. } => CompiledPattern {
             checks: vec![Check::StringEquality {
                 local: subject,
-                string: value.clone(),
+                string: unescape(value).into(),
             }],
             assignments: vec![],
             nested: vec![],
@@ -354,6 +355,8 @@ pub fn compile_pattern(
             // left_side_string = "Oioi"
             // left_side_assignment = None
             // right_side_assignment = AssignName::Discard("_wow")
+
+            let left_side_string = unescape(&left_side_string);
 
             let mut assignments = vec![];
 
@@ -376,7 +379,7 @@ pub fn compile_pattern(
                 );
 
                 assignments.push(Assignment::StringConstant {
-                    constant: left_side_string.clone(),
+                    constant: left_side_string.clone().into(),
                     target_local: target_id,
                     name: name.clone(),
                 });
@@ -410,7 +413,7 @@ pub fn compile_pattern(
             CompiledPattern {
                 checks: vec![Check::PrefixEquality {
                     local: subject,
-                    prefix: left_side_string.clone(),
+                    prefix: left_side_string.into(),
                 }],
                 assignments,
                 nested: vec![],
