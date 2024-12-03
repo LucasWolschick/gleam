@@ -9,7 +9,7 @@ mod table;
 mod tests;
 
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -26,18 +26,109 @@ use table::{FieldType, Local, LocalStore, ProductField, Strings, SymbolTable};
 use crate::{
     ast::{
         BinOp, ClauseGuard, Statement, TypedAssignment, TypedClause, TypedClauseGuard,
-        TypedConstant, TypedExpr, TypedFunction, TypedModule, TypedRecordConstructor,
-        TypedStatement,
+        TypedConstant, TypedDefinition, TypedExpr, TypedFunction, TypedModule,
+        TypedRecordConstructor, TypedStatement,
     },
-    io::FileSystemWriter,
+    build::{
+        Mode, NullTelemetry, PackageCompiler, StaleTracker, Target, TargetCodegenConfiguration,
+    },
+    config::PackageConfig,
+    io::{memory::InMemoryFileSystem, FileSystemWriter},
     type_::{Type, ValueConstructor, ValueConstructorVariant},
+    uid::UniqueIdGenerator,
+    warning::{VectorWarningEmitterIO, WarningEmitter},
 };
 
+// TODO: support using external in prelude.gleam
+// TODO: move all non trivial functions to prelude.gleam:
+//       subeq, strcat, strsub, strwritestdout
+// TODO: add builtin functions:
+//       float_to_int, int_to_float, bitwise ops,
+//       string_num_bytes, string_get_byte,
+//       memory_read, memory_write (from the linear memory)
+// TODO: expose some selected wasi functions
+
 pub fn module(writer: &impl FileSystemWriter, ast: &TypedModule) {
+    let prelude = build_module(PRELUDE).definitions;
+    let mut definitions = prelude.clone();
+    definitions.extend(
+        ast.definitions
+            .iter()
+            .filter(|def| !is_prelude_function(&prelude, def))
+            .cloned(),
+    );
+    let ast = TypedModule {
+        definitions,
+        ..ast.clone()
+    };
     dbg!(&ast);
-    let module = construct_module(ast);
+    let module = construct_module(&ast);
     let bytes = encoder::emit(module);
-    writer.write_bytes("out.wasm".into(), &bytes[..]).unwrap();
+    writer.write_bytes("out.wasm".into(), &bytes).unwrap();
+}
+
+const PRELUDE: &str = include_str!("prelude.gleam");
+
+fn is_prelude_function(prelude: &[TypedDefinition], def: &TypedDefinition) -> bool {
+    match def {
+        TypedDefinition::Function(f) => {
+            if let Some((module, name)) = &f.external_wasm {
+                module == "gleam" && has_function(prelude, name)
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+fn has_function(prelude: &[TypedDefinition], name: &str) -> bool {
+    prelude
+        .iter()
+        .find(|def| match def {
+            TypedDefinition::Function(f) => f.name == name,
+            _ => false,
+        })
+        .is_some()
+}
+
+pub fn build_module(src: &str) -> TypedModule {
+    let fs = InMemoryFileSystem::new();
+    fs.write("/src/name.gleam".into(), src).unwrap();
+
+    let config = PackageConfig {
+        target: Target::Wasm,
+        ..Default::default()
+    };
+
+    let mut compiler = PackageCompiler::new(
+        &config,
+        Mode::Dev,
+        "/".into(),
+        "/src/".into(),
+        "/src".into(),
+        &TargetCodegenConfiguration::Wasm {},
+        UniqueIdGenerator::new(),
+        fs,
+    );
+
+    compiler.perform_codegen = false;
+
+    compiler
+        .compile(
+            &WarningEmitter::new(Arc::new(VectorWarningEmitterIO::new())),
+            &mut im::HashMap::new(),
+            &mut im::HashMap::new(),
+            &mut StaleTracker::default(),
+            &mut HashSet::new(),
+            &NullTelemetry,
+        )
+        .into_result()
+        .expect("compile wasm_prelude.gleam")
+        .into_iter()
+        .next()
+        .expect("the wasm_prelude module")
+        .ast
 }
 
 fn construct_module(ast: &TypedModule) -> WasmModule {

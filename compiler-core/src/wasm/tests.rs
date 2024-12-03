@@ -1,8 +1,7 @@
 #[test]
 fn string_unescape() {
-    use crate::wasm::string;
     assert_eq!(
-        string::unescape(r#"sure \\ \n \"its\" \t works! \u{263A}, \r or \f not..."#),
+        crate::wasm::string::unescape(r#"sure \\ \n \"its\" \t works! \u{263A}, \r or \f not..."#),
         "sure \\ \n \"its\" \t works! ☺, \r or \x0C not..."
     );
 }
@@ -36,6 +35,11 @@ fn string() {
     test_file("string.gleam");
 }
 
+#[test]
+fn prelude() {
+    test_file("prelude.gleam");
+}
+
 #[cfg(test)]
 fn test_file(file: &str) {
     let mut case = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -46,29 +50,18 @@ fn test_file(file: &str) {
 
 #[cfg(test)]
 fn build_and_run(code: &str) -> assert_cmd::assert::Assert {
-    use assert_cmd::prelude::*;
-    use std::{self, fs, process::Command};
-    use tempdir::TempDir;
+    use crate::io::FileSystemReader;
+    use assert_cmd::prelude::OutputAssertExt;
 
-    let dir = TempDir::new("gleam").unwrap();
+    let module = crate::wasm::build_module(code);
+    let mut fs = crate::io::memory::InMemoryFileSystem::new();
+    crate::wasm::module(&mut fs, &module);
 
-    fs::write(dir.path().join("gleam.toml"), "name=\"a\"").unwrap();
+    let dir = tempdir::TempDir::new("gleam").unwrap();
+    let out = dir.path().join("out.wasm");
+    std::fs::write(&out, fs.read_bytes("out.wasm".into()).unwrap()).unwrap();
 
-    let src = dir.path().join("src");
-    fs::create_dir(&src).unwrap();
-    fs::write(src.join("a.gleam"), code).unwrap();
-
-    assert!(Command::cargo_bin("gleam")
-        .unwrap()
-        .args(["build", "--target", "wasm"])
-        .current_dir(&dir)
-        .status()
-        .unwrap()
-        .success());
-
-    let wasm = dir.path().join("out.wasm");
-
-    Command::new("wasmtime")
-        .args(["-W", "all-proposals=y", wasm.to_str().unwrap()])
+    std::process::Command::new("wasmtime")
+        .args(["-W", "all-proposals=y", &out.to_str().unwrap()])
         .assert()
 }
