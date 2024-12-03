@@ -466,6 +466,15 @@ fn construct_module(ast: &TypedModule) -> WasmModule {
                                     table.string_write_out.unwrap(),
                                 );
                                 functions.push(function);
+                            } else if module == "gleam" && item == "float_to_int" {
+                                let function = emit_stub_function(
+                                    f,
+                                    function_data.id,
+                                    &table,
+                                    &root_environment,
+                                    table.float_to_int.unwrap(),
+                                );
+                                functions.push(function);
                             } else {
                                 todo!("External wasm functions not implemented yet");
                             }
@@ -682,16 +691,13 @@ fn emit_sum_equality(sum: &table::Sum, table: &SymbolTable) -> WasmFunction {
             instructions.push(Inst::End);
         }
 
-        // unreachable
-        instructions.push(Inst::Unreachable);
+        // return true if we got here
+        instructions.push(Inst::I32Const(1));
+        instructions.push(Inst::Return);
 
         // end block
         instructions.push(Inst::End);
     }
-
-    // return true if we got here
-    instructions.push(Inst::I32Const(1));
-    instructions.push(Inst::Return);
 
     // end outer block
     instructions.push(Inst::End);
@@ -844,6 +850,52 @@ fn generate_prelude_types(table: &mut SymbolTable, env: &mut Environment<'_>) ->
         },
     );
     table.float_division = Some(float_div_type_id);
+
+    // float to integer conversion internal function
+    let float_to_int_type_id = table.types.new_id();
+    table.types.insert(
+        float_to_int_type_id,
+        table::Type {
+            id: float_to_int_type_id,
+            name: "typ@float_to_int".into(),
+            definition: WasmType {
+                name: "typ@float_to_int".into(),
+                id: float_to_int_type_id.id(),
+                definition: WasmTypeDefinition::Function {
+                    parameters: vec![WasmTypeImpl::Float],
+                    returns: WasmTypeImpl::Int,
+                },
+            },
+        },
+    );
+    let float_to_int_id = table.functions.new_id();
+    table.functions.insert(
+        float_to_int_id,
+        table::Function {
+            id: float_to_int_id,
+            name: "fun@float_to_int".into(),
+            signature: float_to_int_type_id,
+            arity: 1,
+        },
+    );
+
+    let float_to_int_function = WasmFunction {
+        name: "fun@float_to_int".into(),
+        type_index: float_to_int_type_id.id(),
+        arity: 1,
+        instructions: {
+            let mut insts = WasmInstructions::single(wasm_encoder::Instruction::LocalGet(0));
+            insts.lst.extend(integer::float_to_int().lst);
+            insts.lst.push(wasm_encoder::Instruction::End);
+            insts
+        },
+        locals: vec![],
+        argument_names: vec![Some("target".into())],
+        function_index: float_to_int_id.id(),
+        public: false,
+    };
+    module.functions.push(float_to_int_function);
+    table.float_to_int = Some(float_to_int_id);
 
     // - PreludeType::Int
     let int_div_type_id = table.types.new_id();

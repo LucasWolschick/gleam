@@ -54,6 +54,10 @@ pub fn gte() -> WasmInstructions {
     WasmInstructions::single(Instruction::I32GeS)
 }
 
+pub fn float_to_int() -> WasmInstructions {
+    WasmInstructions::single(Instruction::I32TruncF64S)
+}
+
 pub fn const_expr_initializer(arg: Representation) -> wasm_encoder::ConstExpr {
     wasm_encoder::ConstExpr::i32_const(arg)
 }

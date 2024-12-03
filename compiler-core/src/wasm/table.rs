@@ -440,6 +440,8 @@ pub struct SymbolTable {
     pub string_concat: Option<FunctionId>,
     pub string_substring: Option<FunctionId>,
     pub string_write_out: Option<FunctionId>,
+
+    pub float_to_int: Option<FunctionId>,
 }
 
 impl SymbolTable {
@@ -458,6 +460,7 @@ impl SymbolTable {
             string_concat: None,
             string_substring: None,
             string_write_out: None,
+            float_to_int: None,
         }
     }
 }
